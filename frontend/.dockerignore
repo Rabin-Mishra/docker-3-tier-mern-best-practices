@@ -1,0 +1,17 @@
+# Dependency folders
+node_modules/
+
+# Local build outputs
+dist/
+build/
+# Local environment secrets and overrides
+.env
+.env.local
+.env.production.local
+# Git metadata
+.git    
+.gitignore
+
+# System / OS files
+.DS_Store
+thumbs.db

@@ -1,0 +1,177 @@
+# ============================================================================
+# Docker Compose Configuration for MERN Stack Application
+# ----------------------------------------------------------------------------
+# This file defines three services:
+#   1. MongoDB Database
+#   2. Node.js Backend API
+#   3. React Frontend
+#
+# It also defines:
+#   - A custom bridge network for communication
+#   - Persistent Docker volumes for database and logs
+# ============================================================================
+
+services:
+
+  # ==========================================================================
+  # MongoDB Database Service
+  # --------------------------------------------------------------------------
+  # This service creates a MongoDB container using a custom Dockerfile.
+  # It stores application data persistently using Docker volumes.
+  # ==========================================================================
+
+  database:
+
+    # Build the MongoDB image from the Dockerfile inside ./database
+    build:
+      context: ./database
+      dockerfile: Dockerfile
+
+    # Custom container name
+    container_name: mern-mongodb-container
+
+    # Map host port 27018 to container port 27017
+    ports:
+      - "27018:27017"
+
+    # MongoDB initialization variables
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=dbadmin
+      - MONGO_INITDB_ROOT_PASSWORD=supersecurepassword
+      - MONGO_INITDB_DATABASE=mern_db
+
+    # Persist MongoDB data even after the container is removed
+    volumes:
+      - db-data-vol:/data/db
+
+    # Health check ensures MongoDB is ready before dependent services start
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.runCommand('ping').ok", "--quiet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    # Connect this container to the custom bridge network
+    networks:
+      - mern-net
+
+
+  # ==========================================================================
+  # Backend Service (Node.js / Express API)
+  # --------------------------------------------------------------------------
+  # This service builds the backend application and connects it to MongoDB.
+  # It waits until MongoDB passes its health check before starting.
+  # ==========================================================================
+
+  backend:
+
+    # Build backend image
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+
+    # Custom container name
+    container_name: mern-api-container
+
+    # Expose backend API
+    ports:
+      - "5000:5000"
+
+    # Environment variables used by the backend application
+    environment:
+
+      # Run application in production mode
+      - NODE_ENV=production
+
+      # MongoDB connection string
+      - MONGO_URI=mongodb://dbadmin:supersecurepassword@database:27017/mern_db?authSource=admin
+
+      # Backend API port
+      - PORT=5000
+
+      # Secret key used for JWT authentication
+      - JWT_SECRET=supersecretsomewhereinuniverse
+
+      # JWT token expiry duration
+      - JWT_EXPIRES_IN=24h
+
+      # Directory where authentication logs will be stored
+      - LOG_DIR=/data/logs
+
+    # Persist log files
+    volumes:
+      - auth-logs-volume:/data/logs
+
+    # Start backend only after MongoDB becomes healthy
+    depends_on:
+      database:
+        condition: service_healthy
+
+    # Connect to custom network
+    networks:
+      - mern-net
+
+
+  # ==========================================================================
+  # Frontend Service (React + Nginx)
+  # --------------------------------------------------------------------------
+  # Builds the React application and serves it using Nginx.
+  # ==========================================================================
+
+  frontend:
+
+    # Build frontend image
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+
+    # Custom container name
+    container_name: mern-frontend-container
+
+    # Map host port 3008 to Nginx port 80
+    ports:
+      - "3008:80"
+
+    # Environment variables injected at runtime
+    environment:
+      - VITE_API_URL=http://localhost:5000/api
+
+    # Start frontend after backend container starts
+    depends_on:
+      - backend
+
+    # Connect to custom network
+    networks:
+      - mern-net
+
+
+# ============================================================================
+# Docker Network Configuration
+# ----------------------------------------------------------------------------
+# Creates a user-defined bridge network allowing all containers
+# to communicate using their service names.
+# ============================================================================
+
+networks:
+
+  mern-net:
+    driver: bridge
+
+
+# ============================================================================
+# Docker Volumes
+# ----------------------------------------------------------------------------
+# Named volumes provide persistent storage.
+# Data remains even if containers are deleted.
+# ============================================================================
+
+volumes:
+
+  # Stores MongoDB database files
+  db-data-vol:
+    external: false
+
+  # Stores backend authentication log files
+  auth-logs-volume:
+    external: false
